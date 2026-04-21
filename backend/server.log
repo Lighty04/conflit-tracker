@@ -1,2 +1,7 @@
 INFO:     127.0.0.1:54590 - "GET /api/stats HTTP/1.1" 200 OK
 INFO:     127.0.0.1:38540 - "GET /api/stats HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35066 - "GET /api/stats HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52324 - "GET /api/stats HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50594 - "GET /api/graph/neighbors?node_id=pers_emmanuel_demarcy_mota&hops=1 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52726 - "GET /api/graph/neighbors?node_id=pers_emmanuel_demarcy_mota&hops=1 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44836 - "GET /api/graph/neighbors?node_id=pers_emmanuel_demarcy_mota&hops=2 HTTP/1.1" 200 OK
