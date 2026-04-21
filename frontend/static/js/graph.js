@@ -478,9 +478,17 @@ async function showPersonDetail(personId) {
             </div>
             ` : ''}
             
-            <div style="margin-top:12px; display:flex; gap:8px;">
-                <button onclick="loadGraphForPerson('${p.id}')" style="flex:1;padding:10px;background:#3b82f6;border:none;border-radius:8px;color:#fff;cursor:pointer;font-size:0.875rem;font-weight:500;">Voir le réseau graphique</button>
-                <button onclick="exportCurrentSVG('${p.id}')" style="padding:10px;background:#1e293b;border:1px solid #334155;border-radius:8px;color:#e0e6ed;cursor:pointer;font-size:0.875rem;">SVG</button>
+            <div style="margin-top:12px; display:flex; gap:8px; flex-wrap:wrap;">
+                <button onclick="loadGraphForPerson('${p.id}')" style="flex:1;padding:10px;background:#3b82f6;border:none;border-radius:8px;color:#fff;cursor:pointer;font-size:0.875rem;font-weight:500;">Voir le réseau</button>
+                <button onclick="exportCurrentSVG()" style="padding:10px;background:#1e293b;border:1px solid #334155;border-radius:8px;color:#e0e6ed;cursor:pointer;font-size:0.875rem;">SVG</button>
+                <button onclick="exportPNG()" style="padding:10px;background:#1e293b;border:1px solid #334155;border-radius:8px;color:#e0e6ed;cursor:pointer;font-size:0.875rem;">PNG</button>
+                <button onclick="showEmbedCode('${p.id}')" style="padding:10px;background:#1e293b;border:1px solid #334155;border-radius:8px;color:#e0e6ed;cursor:pointer;font-size:0.875rem;">Partager</button>
+            </div>
+            
+            <div id="embed-code-box" style="display:none;margin-top:12px;padding:12px;background:#1e293b;border-radius:8px;">
+                <div class="section-title">Code d'intégration</div>
+                <textarea id="embed-code-text" readonly style="width:100%;height:80px;background:#0a0e1a;border:1px solid #334155;border-radius:6px;color:#e0e6ed;font-size:0.75rem;padding:8px;resize:none;"></textarea>
+                <button onclick="copyEmbedCode()" style="margin-top:8px;padding:6px 12px;background:#334155;border:none;border-radius:6px;color:#e0e6ed;cursor:pointer;font-size:0.75rem;">Copier</button>
             </div>
         `;
     } catch (e) {
@@ -611,6 +619,29 @@ function exportPNG() {
     };
     
     img.src = url;
+}
+
+function showEmbedCode(personId) {
+    const box = document.getElementById('embed-code-box');
+    const textarea = document.getElementById('embed-code-text');
+    
+    const embedUrl = `${window.location.origin}/embed?person=${personId}&hops=2`;
+    const iframeCode = `&lt;iframe src="${embedUrl}" width="100%" height="500" frameborder="0"&gt;&lt;/iframe&gt;`;
+    
+    textarea.value = iframeCode;
+    box.style.display = box.style.display === 'none' ? 'block' : 'none';
+}
+
+function copyEmbedCode() {
+    const textarea = document.getElementById('embed-code-text');
+    textarea.select();
+    document.execCommand('copy');
+    
+    // Brief feedback
+    const btn = document.querySelector('#embed-code-box button');
+    const original = btn.textContent;
+    btn.textContent = 'Copié !';
+    setTimeout(() => btn.textContent = original, 1500);
 }
 
 // Initialize
