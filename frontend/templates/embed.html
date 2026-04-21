@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ConflitMap — Réseau</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #0a0e1a;
+            overflow: hidden;
+        }
+        #graph-container {
+            width: 100%;
+            height: 100vh;
+            position: relative;
+        }
+        #graph-svg {
+            width: 100%;
+            height: 100%;
+        }
+        .watermark {
+            position: absolute;
+            bottom: 12px;
+            left: 12px;
+            font-size: 0.75rem;
+            color: rgba(148, 163, 184, 0.5);
+            pointer-events: none;
+        }
+        .info-badge {
+            position: absolute;
+            top: 12px;
+            left: 12px;
+            background: rgba(17, 24, 39, 0.9);
+            padding: 10px 16px;
+            border-radius: 8px;
+            border: 1px solid #1e293b;
+            color: #e0e6ed;
+            font-size: 0.875rem;
+            pointer-events: none;
+        }
+        .info-badge .name {
+            font-weight: 600;
+            font-size: 1rem;
+            color: #f8fafc;
+        }
+        .info-badge .score {
+            font-size: 0.875rem;
+            color: #f59e0b;
+            margin-top: 2px;
+        }
+    </style>
+</head>
+<body>
+    <div id="graph-container">
+        <svg id="graph-svg"></svg>
+        <div class="info-badge" id="info-badge">
+            <div class="name" id="badge-name">ConflitMap</div>
+            <div class="score" id="badge-score"></div>
+        </div>
+        <div class="watermark">ConflitMap.fr</div>
+    </div>
+    
+    <script>
+        const API_BASE = '/api';
+        const urlParams = new URLSearchParams(window.location.search);
+        const personId = urlParams.get('person') || 'inst_paris_ville';
+        const hops = parseInt(urlParams.get('hops')) || 1;
+        
+        async function init() {
+            const container = document.getElementById('graph-container');
+            const width = container.clientWidth;
+            const height = container.clientHeight;
+            
+            const svg = d3.select('#graph-svg')
+                .attr('width', width)
+                .attr('height', height);
+            
+            const g = svg.append('g');
+            
+            // Zoom
+            svg.call(d3.zoom()
+                .scaleExtent([0.1, 4])
+                .on('zoom', (event) => g.attr('transform', event.transform)));
+            
+            // Load network
+            try {
+                const res = await fetch(`${API_BASE}/graph/neighbors?node_id=${personId}&hops=${hops}`);
+                const data = await res.json();
+                
+                const nodes = data.nodes;
+                const edges = data.edges;
+                
+                // Update badge
+                const mainNode = nodes.find(n => n.id === personId);
+                if (mainNode) {
+                    document.getElementById('badge-name').textContent = mainNode.name;
+                    const score = mainNode.conflict_score || 0;
+                    if (score > 0) {
+                        document.getElementById('badge-score').textContent = `Score: ${score}/100`;
+                    }
+                }
+                
+                // Render graph
+                renderGraph(g, nodes, edges, width, height);
+            } catch (e) {
+                console.error('Failed to load:', e);
+            }
+        }
+        
+        function renderGraph(g, nodes, edges, width, height) {
+            const nodeMap = new Map(nodes.map(n => [n.id, n]));
+            const processedEdges = edges.map(e => ({
+                source: nodeMap.get(e.source) || e.source,
+                target: nodeMap.get(e.target) || e.target,
+                ...e
+            })).filter(e => typeof e.source === 'object' && typeof e.target === 'object');
+            
+            const simulation = d3.forceSimulation(nodes)
+                .force('link', d3.forceLink(processedEdges).id(d => d.id).distance(80))
+                .force('charge', d3.forceManyBody().strength(-300))
+                .force('center', d3.forceCenter(width / 2, height / 2));
+            
+            const link = g.append('g').selectAll('line')
+                .data(processedEdges)
+                .enter().append('line')
+                .attr('stroke', '#475569')
+                .attr('stroke-width', 1)
+                .attr('stroke-opacity', 0.5);
+            
+            const node = g.append('g').selectAll('circle')
+                .data(nodes)
+                .enter().append('circle')
+                .attr('r', d => ({person: 8, association: 14, institution: 20}[d.type] || 10))
+                .attr('fill', d => ({person: '#3b82f6', association: '#10b981', institution: '#f59e0b'}[d.type] || '#94a3b8'))
+                .attr('stroke', '#0f172a')
+                .attr('stroke-width', 2);
+            
+            const label = g.append('g').selectAll('text')
+                .data(nodes)
+                .enter().append('text')
+                .text(d => d.name.length > 20 ? d.name.substring(0, 20) + '...' : d.name)
+                .attr('font-size', 10)
+                .attr('fill', '#e2e8f0')
+                .attr('text-anchor', 'middle')
+                .attr('dy', d => -({person: 8, association: 14, institution: 20}[d.type] || 10) - 6)
+                .attr('pointer-events', 'none');
+            
+            simulation.on('tick', () => {
+                link.attr('x1', d => d.source.x).attr('y1', d => d.source.y)
+                    .attr('x2', d => d.target.x).attr('y2', d => d.target.y);
+                node.attr('cx', d => d.x).attr('cy', d => d.y);
+                label.attr('x', d => d.x).attr('y', d => d.y);
+            });
+        }
+        
+        init();
+    </script>
+</body>
+</html>

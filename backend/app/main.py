@@ -8,6 +8,7 @@ import os
 from .database import get_db, init_db
 from .graph_service import GraphService
 from .conflict_service import ConflictService
+from .report_service import ReportService
 from .models import Node, Edge
 
 app = FastAPI(title="ConflitTracker API")
@@ -37,6 +38,13 @@ async def read_root():
     if template_path.exists():
         return template_path.read_text()
     return "<h1>ConflitTracker</h1><p>Frontend not built yet.</p>"
+
+@app.get("/embed", response_class=HTMLResponse)
+async def read_embed():
+    template_path = Path(__file__).parent.parent.parent / "frontend" / "templates" / "embed.html"
+    if template_path.exists():
+        return template_path.read_text()
+    return "<h1>ConflitMap Embed</h1><p>Template not found.</p>"
 
 @app.get("/api/graph/neighbors")
 async def get_neighbors(node_id: str, hops: int = 1, db: Session = Depends(get_db)):
@@ -126,3 +134,36 @@ async def export_graph(node_id: str, hops: int = 2, format: str = "json", db: Se
     service.load_from_db(db)
     data = service.get_neighbors(node_id, hops)
     return data
+
+@app.get("/api/report/{person_id}")
+async def get_person_report(person_id: str, db: Session = Depends(get_db)):
+    """Generate complete conflict report for a person (PDF-ready data)"""
+    service = ReportService(db)
+    report = service.generate_person_report(person_id)
+    if not report:
+        raise HTTPException(status_code=404, detail="Person not found")
+    from datetime import datetime
+    report["generated_at"] = datetime.utcnow().isoformat()
+    return report
+
+@app.get("/api/embed/person/{person_id}")
+async def embed_person(person_id: str, hops: int = 1, db: Session = Depends(get_db)):
+    """Get embeddable graph data for iframe embedding"""
+    service = GraphService()
+    service.load_from_db(db)
+    person = db.query(Node).filter(Node.node_id == person_id).first()
+    if not person:
+        raise HTTPException(status_code=404, detail="Person not found")
+    
+    network = service.get_neighbors(person_id, hops)
+    return {
+        "person_id": person_id,
+        "person_name": person.name,
+        "conflict_score": person.conflict_score or 0,
+        "is_membre_de_droit": bool(person.is_membre_de_droit),
+        "total_subventions_controlled": person.total_subventions_controlled or 0,
+        "board_count": person.board_count or 0,
+        "network": network,
+        "embeddable": True,
+        "watermark": "ConflitMap.fr"
+    }

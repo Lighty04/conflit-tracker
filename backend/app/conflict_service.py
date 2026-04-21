@@ -11,7 +11,7 @@ class ConflictService:
         self.db = db
     
     def calculate_person_metrics(self):
-        """Recalculate all person metrics: board_count, total_subventions_controlled, conflict_score"""
+        """Recalculate all person metrics with 0-100 conflict score"""
         persons = self.db.query(Node).filter(Node.type == NodeType.PERSON).all()
         
         for person in persons:
@@ -27,7 +27,6 @@ class ConflictService:
             total_subv = 0
             for edge in board_edges:
                 assoc = edge.target
-                # Sum all SUBSIDIZES edges to this association
                 subv_edges = self.db.query(Edge).filter(
                     Edge.target_id == assoc.id,
                     Edge.type == EdgeType.SUBSIDIZES
@@ -37,23 +36,60 @@ class ConflictService:
             
             person.total_subventions_controlled = total_subv
             
-            # Conflict score: log-scaled to avoid outliers dominating
-            # Formula: board_count * log10(total_subventions + 1)
-            if total_subv > 0:
-                person.conflict_score = person.board_count * math.log10(total_subv + 1)
-            else:
-                person.conflict_score = person.board_count * 0.1
-            
-            # Detect membre_de_droit: check if role contains indicators
+            # Detect membre_de_droit — explicit public appointment only
+            person.is_membre_de_droit = 0
             for edge in board_edges:
                 role = (edge.role or "").lower()
-                if any(indicator in role for indicator in [
-                    "membre de droit", "constitutif de droit", 
-                    "représentant", "maire", "conseiller municipal",
-                    "adjoint au maire", "élu"
+                desc = (edge.description or "").lower()
+                combined = role + " " + desc
+                
+                # Exclude standard corporate titles (NOT political appointments)
+                corporate_skips = ["conseil d'administration", "conseil de surveillance"]
+                for skip in corporate_skips:
+                    if skip in combined:
+                        combined = combined.replace(skip, "")  # Remove to prevent false match
+                
+                # Only explicit political appointment indicators
+                if any(indicator in combined for indicator in [
+                    "membre de droit", "constitutif de droit",
+                    "membres de droit", "membres constitutifs de droit",
+                    "représentant de la ville", "représentant de l'etat",
+                    "représentant du maire", "représentant municipal",
+                    "délégué du maire", "délégué municipal",
+                    "adjoint au maire", "adjointe au maire",
+                    "conseiller municipal", "conseillère municipal",
+                    "conseiller de paris", "conseillère de paris",
+                    "maire de ", "maire du ", "maire d'",
+                    "président du conseil municipal",
+                    "présidente du conseil municipal",
+                    "membre du conseil municipal", "membre du conseil de paris",
+                    "député", "sénateur", "sénatrice",
+                    "ministre", "secrétaire d'état"
                 ]):
                     person.is_membre_de_droit = 1
                     break
+            
+            # NEW: 0-100 conflict score algorithm
+            score = 0
+            
+            # Base: membre de droit (automatic appointment) = 40 pts
+            if person.is_membre_de_droit:
+                score += 40
+            
+            # Multiple boards = concentration of power, max 45 pts
+            if person.board_count > 1:
+                score += min((person.board_count - 1) * 15, 45)
+            
+            # Money controlled, max 35 pts
+            if total_subv > 500000:
+                score += 35
+            elif total_subv > 100000:
+                score += 25
+            elif total_subv > 50000:
+                score += 15
+            
+            # Cap at 100
+            person.conflict_score = min(score, 100)
         
         self.db.commit()
         return len(persons)

@@ -16,3 +16,22 @@ INFO:     127.0.0.1:34578 - "GET /api/leaderboard?metric=conflict_score&limit=3 
 INFO:     127.0.0.1:58774 - "GET /api/alerts HTTP/1.1" 200 OK
 INFO:     127.0.0.1:58778 - "GET /api/person/pers_jean_paul_brandela HTTP/1.1" 200 OK
 INFO:     127.0.0.1:48738 - "GET / HTTP/1.1" 200 OK
+Recalculated metrics for 58 persons
+INFO:     127.0.0.1:40790 - "GET /api/leaderboard?metric=conflict_score&limit=5 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33554 - "GET /api/leaderboard?metric=conflict_score&limit=5 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47396 - "GET /api/person/pers_hubert_valade HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42222 - "GET /api/person/pers_hubert_valade HTTP/1.1" 200 OK
+Recalculated metrics for 58 persons
+INFO:     127.0.0.1:43360 - "GET /api/leaderboard?metric=conflict_score&limit=5 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44216 - "GET /api/leaderboard?metric=conflict_score&limit=5 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41136 - "GET /api/person/pers_marc_tessier HTTP/1.1" 200 OK
+Recalculated metrics for 58 persons
+INFO:     127.0.0.1:47946 - "GET /api/leaderboard?metric=conflict_score&limit=5 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40404 - "GET /api/leaderboard?metric=conflict_score&limit=5 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58500 - "GET /api/person/pers_robert_beugr%C3%A9_mamb%C3%A9 HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:57188 - "GET /api/graph/search?q=beugr%C3%A9&limit=3 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38738 - "GET /api/person/pers_robert_beugre_mambe HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51380 - "GET /api/leaderboard?metric=conflict_score&limit=10 HTTP/1.1" 200 OK
+Recalculated metrics for 58 persons
+INFO:     127.0.0.1:46656 - "GET /api/report/pers_marc_tessier HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33416 - "GET /api/report/pers_marc_tessier HTTP/1.1" 200 OK
