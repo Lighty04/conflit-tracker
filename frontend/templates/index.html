@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ConflitTracker — Réseaux d'influences</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #0a0e1a;
+            color: #e0e6ed;
+            overflow: hidden;
+        }
+        #app {
+            display: flex;
+            height: 100vh;
+        }
+        #sidebar {
+            width: 320px;
+            background: #111827;
+            border-right: 1px solid #1e293b;
+            padding: 20px;
+            overflow-y: auto;
+            flex-shrink: 0;
+        }
+        #sidebar h1 {
+            font-size: 1.25rem;
+            font-weight: 600;
+            margin-bottom: 4px;
+            color: #f8fafc;
+        }
+        #sidebar .subtitle {
+            font-size: 0.75rem;
+            color: #64748b;
+            margin-bottom: 24px;
+        }
+        .search-box {
+            position: relative;
+            margin-bottom: 16px;
+        }
+        .search-box input {
+            width: 100%;
+            padding: 10px 14px;
+            background: #1e293b;
+            border: 1px solid #334155;
+            border-radius: 8px;
+            color: #e0e6ed;
+            font-size: 0.875rem;
+            outline: none;
+        }
+        .search-box input:focus {
+            border-color: #3b82f6;
+        }
+        .search-results {
+            max-height: 200px;
+            overflow-y: auto;
+            background: #1e293b;
+            border: 1px solid #334155;
+            border-radius: 8px;
+            margin-top: 4px;
+        }
+        .search-result {
+            padding: 10px 14px;
+            cursor: pointer;
+            border-bottom: 1px solid #334155;
+            font-size: 0.875rem;
+        }
+        .search-result:hover {
+            background: #334155;
+        }
+        .search-result .name {
+            font-weight: 500;
+            color: #f8fafc;
+        }
+        .search-result .type {
+            font-size: 0.75rem;
+            color: #64748b;
+            text-transform: uppercase;
+        }
+        .stats {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+            margin: 20px 0;
+        }
+        .stat-card {
+            background: #1e293b;
+            padding: 12px;
+            border-radius: 8px;
+            text-align: center;
+        }
+        .stat-card .number {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: #3b82f6;
+        }
+        .stat-card .label {
+            font-size: 0.75rem;
+            color: #64748b;
+        }
+        #node-info {
+            margin-top: 20px;
+            padding: 16px;
+            background: #1e293b;
+            border-radius: 8px;
+            display: none;
+        }
+        #node-info h3 {
+            font-size: 1rem;
+            margin-bottom: 8px;
+            color: #f8fafc;
+        }
+        #node-info .info-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 6px 0;
+            border-bottom: 1px solid #334155;
+            font-size: 0.875rem;
+        }
+        #node-info .info-label {
+            color: #64748b;
+        }
+        #graph-container {
+            flex: 1;
+            position: relative;
+            overflow: hidden;
+        }
+        #graph-svg {
+            width: 100%;
+            height: 100%;
+        }
+        .controls {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            display: flex;
+            gap: 8px;
+        }
+        .control-btn {
+            width: 40px;
+            height: 40px;
+            background: #1e293b;
+            border: 1px solid #334155;
+            border-radius: 8px;
+            color: #e0e6ed;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.25rem;
+        }
+        .control-btn:hover {
+            background: #334155;
+        }
+        .legend {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: #111827;
+            padding: 12px 16px;
+            border-radius: 8px;
+            border: 1px solid #1e293b;
+            font-size: 0.875rem;
+        }
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin: 4px 0;
+        }
+        .legend-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+        }
+        .legend-dot.person { background: #3b82f6; }
+        .legend-dot.association { background: #10b981; }
+        .legend-dot.institution { background: #f59e0b; }
+        .loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 1rem;
+            color: #64748b;
+        }
+    </style>
+</head>
+<body>
+    <div id="app">
+        <aside id="sidebar">
+            <h1>ConflitTracker</h1>
+            <div class="subtitle">Cartographie des conflits d'intérêts</div>
+            
+            <div class="search-box">
+                <input type="text" id="search-input" placeholder="Rechercher une personne, association..." autocomplete="off">
+                <div class="search-results" id="search-results"></div>
+            </div>
+            
+            <div class="stats" id="stats">
+                <div class="stat-card">
+                    <div class="number" id="stat-nodes">-</div>
+                    <div class="label">Nœuds</div>
+                </div>
+                <div class="stat-card">
+                    <div class="number" id="stat-edges">-</div>
+                    <div class="label">Liens</div>
+                </div>
+            </div>
+            
+            <div id="node-info">
+                <h3 id="info-name"></h3>
+                <div class="info-row">
+                    <span class="info-label">Type</span>
+                    <span id="info-type"></span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Budget total</span>
+                    <span id="info-budget"></span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Rôle</span>
+                    <span id="info-role"></span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Source</span>
+                    <span id="info-source"></span>
+                </div>
+            </div>
+        </aside>
+        
+        <main id="graph-container">
+            <svg id="graph-svg"></svg>
+            <div class="loading" id="loading">Chargement du réseau...</div>
+            
+            <div class="legend">
+                <div class="legend-item">
+                    <div class="legend-dot person"></div>
+                    <span>Personne</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-dot association"></div>
+                    <span>Association</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-dot institution"></div>
+                    <span>Institution</span>
+                </div>
+            </div>
+            
+            <div class="controls">
+                <button class="control-btn" id="btn-reset" title="Réinitialiser">⟲</button>
+                <button class="control-btn" id="btn-zoom-in" title="Zoom +">+</button>
+                <button class="control-btn" id="btn-zoom-out" title="Zoom −">−</button>
+            </div>
+        </main>
+    </div>
+    
+    <script src="/static/js/graph.js"></script>
+</body>
+</html>
