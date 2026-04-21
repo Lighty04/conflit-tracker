@@ -351,6 +351,170 @@ function escapeHtml(text) {
     return div.innerHTML;
 }
 
+function switchPanel(panelId) {
+    // Update tabs
+    document.querySelectorAll('.nav-tab').forEach(t => {
+        t.classList.toggle('active', t.dataset.panel === panelId);
+    });
+    // Update panels
+    document.querySelectorAll('.panel').forEach(p => {
+        p.classList.toggle('active', p.id === panelId);
+    });
+    
+    if (panelId === 'leaderboard-panel') loadLeaderboard();
+    if (panelId === 'alerts-panel') loadAlerts();
+}
+
+async function loadLeaderboard() {
+    const metric = document.getElementById('leaderboard-metric').value;
+    const list = document.getElementById('leaderboard-list');
+    list.innerHTML = '<div style="color:#64748b;text-align:center;padding:20px;">Chargement...</div>';
+    
+    try {
+        const res = await fetch(`${API_BASE}/leaderboard?metric=${metric}&limit=30`);
+        const data = await res.json();
+        
+        const metricLabels = {
+            'conflict_score': 'Score',
+            'total_subventions_controlled': '€',
+            'board_count': 'CA'
+        };
+        
+        list.innerHTML = data.map(p => `
+            <div class="leaderboard-item" onclick="showPersonDetail('${p.id}')">
+                <div style="display:flex;align-items:center;gap:12px;">
+                    <div class="rank">${p.rank}</div>
+                    <div style="flex:1;">
+                        <div class="name">${escapeHtml(p.name)} ${p.is_membre_de_droit ? '<span class="badge badge-danger">membre de droit</span>' : ''}</div>
+                        <div class="meta">${p.board_count} CA · €${(p.total_subventions_controlled||0).toLocaleString('fr-FR')}</div>
+                    </div>
+                    <div class="score">${metric === 'total_subventions_controlled' ? '€' + Math.round(p[metric]).toLocaleString('fr-FR') : p[metric]}</div>
+                </div>
+            </div>
+        `).join('');
+    } catch (e) {
+        list.innerHTML = '<div style="color:#ef4444;text-align:center;padding:20px;">Erreur de chargement</div>';
+    }
+}
+
+async function loadAlerts() {
+    const list = document.getElementById('alerts-list');
+    list.innerHTML = '<div style="color:#64748b;text-align:center;padding:20px;">Chargement...</div>';
+    
+    try {
+        const res = await fetch(`${API_BASE}/alerts`);
+        const alerts = await res.json();
+        
+        list.innerHTML = alerts.slice(0, 20).map(a => `
+            <div class="alert-item ${a.severity.toLowerCase()}" onclick="showPersonDetail('${a.person_id}')">
+                <div class="alert-type">${a.type.replace(/_/g, ' ')}</div>
+                <div class="alert-msg">${escapeHtml(a.message)}</div>
+            </div>
+        `).join('');
+    } catch (e) {
+        list.innerHTML = '<div style="color:#ef4444;text-align:center;padding:20px;">Erreur de chargement</div>';
+    }
+}
+
+async function showPersonDetail(personId) {
+    switchPanel('person-panel');
+    const detail = document.getElementById('person-detail');
+    detail.innerHTML = '<div style="color:#64748b;text-align:center;padding:20px;">Chargement...</div>';
+    
+    try {
+        const res = await fetch(`${API_BASE}/person/${personId}`);
+        const p = await res.json();
+        
+        const boardsHtml = p.boards && p.boards.length 
+            ? p.boards.map(b => `
+                <div class="board-item">
+                    <div class="board-name">${escapeHtml(b.name)}</div>
+                    <div class="board-role">${escapeHtml(b.role || '')} · ${b.siret || ''}</div>
+                    <div class="board-amount">Subventions reçues: €${(b.subventions_received||0).toLocaleString('fr-FR')}</div>
+                </div>
+            `).join('')
+            : '<div style="color:#64748b;font-size:0.875rem;">Aucun conseil d\'administration connu</div>';
+        
+        const coMembersHtml = p.co_members && p.co_members.length
+            ? `<div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:8px;">` + 
+              p.co_members.map(m => `<span style="padding:2px 8px;background:#334155;border-radius:12px;font-size:0.75rem;color:#e0e6ed;">${escapeHtml(m.name)}</span>`).join('') +
+              `</div>`
+            : '';
+        
+        detail.innerHTML = `
+            <div class="detail-section">
+                <div style="font-size:1.125rem;font-weight:600;color:#f8fafc;margin-bottom:4px;">${escapeHtml(p.name)}</div>
+                <div style="font-size:0.875rem;color:#64748b;">${escapeHtml(p.role || '')}</div>
+                ${p.is_membre_de_droit ? '<span class="badge badge-danger" style="margin-top:8px;">membre de droit</span>' : ''}
+            </div>
+            
+            <div class="detail-section">
+                <div class="section-title">Métriques</div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+                    <div class="stat-card">
+                        <div class="number">${p.conflict_score || 0}</div>
+                        <div class="label">Score conflit</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="number">€${(p.total_subventions_controlled||0).toLocaleString('fr-FR')}</div>
+                        <div class="label">Subventions contrôlées</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="number">${p.board_count || 0}</div>
+                        <div class="label">Conseils</div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="detail-section">
+                <div class="section-title">Conseils d'administration (${p.boards ? p.boards.length : 0})</div>
+                ${boardsHtml}
+            </div>
+            
+            ${coMembersHtml ? `
+            <div class="detail-section">
+                <div class="section-title">Co-membres de CA</div>
+                ${coMembersHtml}
+            </div>
+            ` : ''}
+            
+            <div style="margin-top:12px;">
+                <button onclick="loadGraphForPerson('${p.id}')" style="width:100%;padding:10px;background:#3b82f6;border:none;border-radius:8px;color:#fff;cursor:pointer;font-size:0.875rem;font-weight:500;">Voir le réseau graphique</button>
+            </div>
+        `;
+    } catch (e) {
+        detail.innerHTML = '<div style="color:#ef4444;text-align:center;padding:20px;">Erreur de chargement</div>';
+    }
+}
+
+async function loadGraphForPerson(personId) {
+    switchPanel('graph-panel');
+    document.getElementById('loading').style.display = 'block';
+    
+    try {
+        // Clear and load person + 2-hop neighborhood
+        allNodes.clear();
+        allEdges = [];
+        
+        const res = await fetch(`${API_BASE}/graph/neighbors?node_id=${personId}&hops=2`);
+        const data = await res.json();
+        
+        data.nodes.forEach(n => allNodes.set(n.id, n));
+        data.edges.forEach(e => allEdges.push(e));
+        
+        renderGraph(Array.from(allNodes.values()), allEdges);
+        document.getElementById('loading').style.display = 'none';
+        
+        // Show info for person
+        const personNode = allNodes.get(personId);
+        if (personNode) {
+            selectNode(personNode);
+        }
+    } catch (e) {
+        document.getElementById('loading').textContent = 'Erreur de chargement';
+    }
+}
+
 function dragstarted(event, d) {
     if (!event.active) simulation.alphaTarget(0.3).restart();
     d.fx = d.x;
