@@ -12,7 +12,7 @@ from .models import Node, Edge
 app = FastAPI(title="ConflitTracker API")
 
 # Mount static files
-static_path = Path(__file__).parent.parent / "frontend" / "static"
+static_path = Path(__file__).parent.parent.parent / "frontend" / "static"
 if static_path.exists():
     app.mount("/static", StaticFiles(directory=str(static_path)), name="static")
 
@@ -22,7 +22,7 @@ async def startup():
 
 @app.get("/", response_class=HTMLResponse)
 async def read_root():
-    template_path = Path(__file__).parent.parent / "frontend" / "templates" / "index.html"
+    template_path = Path(__file__).parent.parent.parent / "frontend" / "templates" / "index.html"
     if template_path.exists():
         return template_path.read_text()
     return "<h1>ConflitTracker</h1><p>Frontend not built yet.</p>"
