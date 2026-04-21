@@ -1,28 +1,21 @@
 import json
 import os
+from collections import defaultdict
 from sqlalchemy.orm import Session
 from .models import Node, Edge, NodeType, EdgeType
 from .database import SessionLocal, init_db
 
-def import_full_dataset(db: Session, data_path: str = None, limit: int = 500):
-    """Import full Paris associations dataset (top N by budget)"""
+def import_full_dataset(db: Session, data_path: str = None, batch_dir: str = None, conflicts_path: str = None):
+    """Import complete dataset: all associations, batch-enriched boards, known conflicts"""
     
     if data_path is None:
-        data_path = os.path.join(
-            os.path.dirname(__file__), 
-            "../../../paris-assos-website/data.json"
-        )
+        data_path = os.path.join(os.path.dirname(__file__), "../../../paris-assos-website/data.json")
+    if batch_dir is None:
+        batch_dir = os.path.join(os.path.dirname(__file__), "../../../paris-assos-website")
+    if conflicts_path is None:
+        conflicts_path = os.path.join(os.path.dirname(__file__), "../../../paris-assos-website/conflicts_database.json")
     
-    with open(data_path, 'r') as f:
-        data = json.load(f)
-    
-    # Sort by totalAmount descending, take top N
-    data.sort(key=lambda x: x.get('totalAmount', 0) or 0, reverse=True)
-    associations = data[:limit]
-    
-    print(f"Importing top {len(associations)} associations from {len(data)} total")
-    
-    # Create Institution node for Paris city
+    # --- PHASE 0: Create Paris institution ---
     paris_node = db.query(Node).filter(Node.node_id == "inst_paris_ville").first()
     if not paris_node:
         paris_node = Node(
@@ -30,29 +23,57 @@ def import_full_dataset(db: Session, data_path: str = None, limit: int = 500):
             type=NodeType.INSTITUTION,
             name="Ville de Paris",
             institution_type="collectivite_territoriale",
-            source="data.json import"
+            source="full import"
         )
         db.add(paris_node)
         db.flush()
     
+    # --- PHASE 1: Import batch files for enriched board data ---
+    import glob
+    batch_files = sorted(glob.glob(os.path.join(batch_dir, "batch*_research_results.json")))
+    enriched_board = {}
+    
+    for bf in batch_files:
+        with open(bf, 'r') as f:
+            data = json.load(f)
+        if isinstance(data, list):
+            assocs = data
+        elif isinstance(data, dict):
+            assocs = data.get("associations", data.get("associations_researched", []))
+        else:
+            continue
+        
+        for a in assocs:
+            siret = str(a.get("siret", "")).replace(" ", "")
+            if siret and a.get("board_members_found"):
+                enriched_board[siret] = a["board_members_found"]
+    
+    print(f"Loaded {len(enriched_board)} enriched associations from batch files")
+    
+    # --- PHASE 2: Import ALL associations from data.json ---
+    with open(data_path, 'r') as f:
+        data = json.load(f)
+    
+    print(f"Importing all {len(data)} associations...")
+    
     total_assocs = 0
     total_persons = 0
     total_edges = 0
+    subvention_agg = defaultdict(lambda: {"amount": 0, "objects": set()})
     
-    for assoc in associations:
+    for assoc in data:
+        total_assocs += 1
         siret = str(assoc.get("siret", "")).replace(" ", "")
         if not siret:
             continue
         
-        total_assocs += 1
         assoc_id = f"assoc_{siret}"
         
-        # Skip if already exists
+        # Skip if already exists (for idempotency)
         assoc_node = db.query(Node).filter(Node.node_id == assoc_id).first()
         if assoc_node:
             continue
         
-        # Create Association node
         assoc_node = Node(
             node_id=assoc_id,
             type=NodeType.ASSOCIATION,
@@ -65,26 +86,19 @@ def import_full_dataset(db: Session, data_path: str = None, limit: int = 500):
         db.add(assoc_node)
         db.flush()
         
-        # Create SUBSIDIZES edges for each subvention
-        for i, sub in enumerate(assoc.get("subventions", [])):
+        # Aggregate subventions
+        for sub in assoc.get("subventions", []):
             if sub.get("amount") and sub["amount"] > 0:
-                edge_id = f"sub_{siret}_{sub.get('year', 'unknown')}_{i}"
-                existing = db.query(Edge).filter(Edge.edge_id == edge_id).first()
-                if not existing:
-                    edge = Edge(
-                        edge_id=edge_id,
-                        type=EdgeType.SUBSIDIZES,
-                        source_id=paris_node.id,
-                        target_id=assoc_node.id,
-                        amount=sub["amount"],
-                        year=int(sub["year"]) if str(sub.get("year", "")).isdigit() else None,
-                        description=sub.get("object", "")
-                    )
-                    db.add(edge)
-                    total_edges += 1
+                year = str(sub.get("year", "unknown"))
+                key = (siret, year)
+                subvention_agg[key]["amount"] += sub["amount"]
+                if sub.get("object"):
+                    subvention_agg[key]["objects"].add(sub["object"])
         
-        # Create Person nodes for board members
-        for member in assoc.get("board_members", []):
+        # Board members - prefer enriched batch data, fallback to data.json
+        board_members = enriched_board.get(siret, assoc.get("board_members", []))
+        
+        for member in board_members:
             name = member.get("name", "").strip()
             if not name or len(name) < 3:
                 continue
@@ -92,11 +106,12 @@ def import_full_dataset(db: Session, data_path: str = None, limit: int = 500):
             if any(skip in name.lower() for skip in [
                 "conseil d'administration", "instance de gouvernance",
                 "collège", "multiple establishments", "representatives",
-                "non disponible", "information non"
+                "non disponible", "information non", "direction",
+                "directeur général", "fédération entreprises"
             ]):
                 continue
             
-            person_id = f"pers_{name.lower().replace(' ', '_').replace('-', '_').replace('’', '_')[:80]}"
+            person_id = f"pers_{normalize_name(name)}"
             
             person = db.query(Node).filter(Node.node_id == person_id).first()
             if not person:
@@ -111,31 +126,96 @@ def import_full_dataset(db: Session, data_path: str = None, limit: int = 500):
                 db.add(person)
                 db.flush()
             
-            # Create MEMBER_OF edge
             edge_id = f"mem_{person_id}_{assoc_id}"
-            existing = db.query(Edge).filter(Edge.edge_id == edge_id).first()
-            if not existing:
-                edge = Edge(
+            if not db.query(Edge).filter(Edge.edge_id == edge_id).first():
+                db.add(Edge(
                     edge_id=edge_id,
                     type=EdgeType.MEMBER_OF,
                     source_id=person.id,
                     target_id=assoc_node.id,
                     role=member.get("role"),
                     description=member.get("note", "")
-                )
-                db.add(edge)
+                ))
                 total_edges += 1
         
-        if total_assocs % 50 == 0:
-            print(f"  Progress: {total_assocs} associations, {total_persons} persons, {total_edges} edges")
+        if total_assocs % 1000 == 0:
+            print(f"  Progress: {total_assocs} associations, {total_persons} persons")
+            db.commit()
+    
+    # Create aggregated subvention edges
+    print(f"Creating {len(subvention_agg)} subvention edges...")
+    for (siret, year), agg in subvention_agg.items():
+        assoc_id = f"assoc_{siret}"
+        assoc_node = db.query(Node).filter(Node.node_id == assoc_id).first()
+        if not assoc_node:
+            continue
+        
+        edge_id = f"sub_{siret}_{year}"
+        if not db.query(Edge).filter(Edge.edge_id == edge_id).first():
+            db.add(Edge(
+                edge_id=edge_id,
+                type=EdgeType.SUBSIDIZES,
+                source_id=paris_node.id,
+                target_id=assoc_node.id,
+                amount=agg["amount"],
+                year=int(year) if year.isdigit() else None,
+                description="; ".join(list(agg["objects"])[:3])
+            ))
+            total_edges += 1
     
     db.commit()
-    print(f"Done: {total_assocs} associations, {total_persons} persons, {total_edges} edges")
+    
+    # --- PHASE 3: Import known conflicts ---
+    try:
+        with open(conflicts_path, 'r') as f:
+            conflicts_data = json.load(f)
+        
+        conflicts = conflicts_data.get("associations", [])
+        print(f"\nImporting {len(conflicts)} known conflicts...")
+        
+        for conflict in conflicts:
+            siret = str(conflict.get("siret", "")).replace(" ", "")
+            if not siret:
+                continue
+            
+            assoc_id = f"assoc_{siret}"
+            assoc_node = db.query(Node).filter(Node.node_id == assoc_id).first()
+            if not assoc_node:
+                continue
+            
+            # Create conflict annotation as an edge attribute or special edge
+            # For now, add a CONFLICT_WITH edge to the Paris institution
+            edge_id = f"conf_{siret}"
+            if not db.query(Edge).filter(Edge.edge_id == edge_id).first():
+                db.add(Edge(
+                    edge_id=edge_id,
+                    type=EdgeType.CONFLICT_WITH,
+                    source_id=paris_node.id,
+                    target_id=assoc_node.id,
+                    description=conflict.get("details", ""),
+                    amount=conflict.get("budget")
+                ))
+    
+        db.commit()
+        print(f"Imported {len(conflicts)} conflict annotations")
+    except FileNotFoundError:
+        print("No conflicts file found, skipping")
+    
+    # Final stats
+    total_nodes = db.query(Node).count()
+    total_edges = db.query(Edge).count()
+    persons = db.query(Node).filter(Node.type == NodeType.PERSON).count()
+    assocs = db.query(Node).filter(Node.type == NodeType.ASSOCIATION).count()
+    
+    print(f"\nDone: {total_nodes} total nodes ({assocs} assocs, {persons} persons), {total_edges} edges")
+
+def normalize_name(name):
+    return name.lower().replace(' ', '_').replace('-', '_').replace('’', '_').replace('é', 'e').replace('è', 'e').replace('ê', 'e').replace('à', 'a').replace('ô', 'o').replace('ç', 'c')[:80]
 
 if __name__ == "__main__":
     init_db()
     db = SessionLocal()
     try:
-        import_full_dataset(db, limit=200)
+        import_full_dataset(db)
     finally:
         db.close()

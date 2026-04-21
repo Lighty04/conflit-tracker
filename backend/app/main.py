@@ -21,16 +21,8 @@ if static_path.exists():
 @app.on_event("startup")
 async def startup():
     init_db()
-    # Calculate conflict metrics on startup
-    from .conflict_service import ConflictService
-    from .database import SessionLocal
-    db = SessionLocal()
-    try:
-        service = ConflictService(db)
-        count = service.calculate_person_metrics()
-        print(f"Recalculated metrics for {count} persons")
-    finally:
-        db.close()
+    # Metrics recalculation is done via POST /api/admin/recalculate
+    # Run it once after import, not on every startup
 
 @app.get("/", response_class=HTMLResponse)
 async def read_root():
