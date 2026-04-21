@@ -478,8 +478,9 @@ async function showPersonDetail(personId) {
             </div>
             ` : ''}
             
-            <div style="margin-top:12px;">
-                <button onclick="loadGraphForPerson('${p.id}')" style="width:100%;padding:10px;background:#3b82f6;border:none;border-radius:8px;color:#fff;cursor:pointer;font-size:0.875rem;font-weight:500;">Voir le réseau graphique</button>
+            <div style="margin-top:12px; display:flex; gap:8px;">
+                <button onclick="loadGraphForPerson('${p.id}')" style="flex:1;padding:10px;background:#3b82f6;border:none;border-radius:8px;color:#fff;cursor:pointer;font-size:0.875rem;font-weight:500;">Voir le réseau graphique</button>
+                <button onclick="exportCurrentSVG('${p.id}')" style="padding:10px;background:#1e293b;border:1px solid #334155;border-radius:8px;color:#e0e6ed;cursor:pointer;font-size:0.875rem;">SVG</button>
             </div>
         `;
     } catch (e) {
@@ -530,6 +531,86 @@ function dragended(event, d) {
     if (!event.active) simulation.alphaTarget(0);
     d.fx = null;
     d.fy = null;
+}
+
+function exportCurrentSVG() {
+    const svgEl = document.getElementById('graph-svg');
+    if (!svgEl) return;
+    
+    // Get the SVG content with inline styles
+    const serializer = new XMLSerializer();
+    let source = serializer.serializeToString(svgEl);
+    
+    // Add XML declaration
+    if (!source.match(/^\s*\u003c\?xml/)) {
+        source = '<?xml version="1.0" encoding="UTF-8" standalone="no"?\u003e\n' + source;
+    }
+    
+    // Add CSS for standalone SVG
+    const svgStyle = `
+    <style>
+        text { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+        circle { stroke: #0f172a; }
+    </style>`;
+    source = source.replace('<svg', svgStyle + '<svg');
+    
+    // Add watermark
+    const watermark = `
+    <text x="${svgEl.clientWidth - 100}" y="${svgEl.clientHeight - 20}" 
+          fill="rgba(148,163,184,0.5)" font-size="12">ConflitMap.fr</text>`;
+    source = source.replace('</svg>', watermark + '</svg>');
+    
+    // Download
+    const blob = new Blob([source], { type: 'image/svg+xml;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `conflitmap-export-${Date.now()}.svg`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+}
+
+function exportPNG() {
+    const svgEl = document.getElementById('graph-svg');
+    if (!svgEl) return;
+    
+    const serializer = new XMLSerializer();
+    let source = serializer.serializeToString(svgEl);
+    
+    // Create canvas
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    canvas.width = svgEl.clientWidth * 2; // 2x for retina
+    canvas.height = svgEl.clientHeight * 2;
+    
+    const img = new Image();
+    const svgBlob = new Blob([source], { type: 'image/svg+xml;charset=utf-8' });
+    const url = URL.createObjectURL(svgBlob);
+    
+    img.onload = function() {
+        ctx.fillStyle = '#0a0e1a';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        
+        // Watermark
+        ctx.fillStyle = 'rgba(148, 163, 184, 0.5)';
+        ctx.font = '24px sans-serif';
+        ctx.fillText('ConflitMap.fr', canvas.width - 200, canvas.height - 40);
+        
+        // Download
+        const pngUrl = canvas.toDataURL('image/png');
+        const link = document.createElement('a');
+        link.href = pngUrl;
+        link.download = `conflitmap-export-${Date.now()}.png`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+    };
+    
+    img.src = url;
 }
 
 // Initialize
