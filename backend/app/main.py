@@ -1,12 +1,13 @@
 from fastapi import FastAPI, Depends, HTTPException
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from sqlalchemy.orm import Session
 from pathlib import Path
 import os
 
 from .database import get_db, init_db
 from .graph_service import GraphService
+from .conflict_service import ConflictService
 from .models import Node, Edge
 
 app = FastAPI(title="ConflitTracker API")
@@ -19,6 +20,16 @@ if static_path.exists():
 @app.on_event("startup")
 async def startup():
     init_db()
+    # Calculate conflict metrics on startup
+    from .conflict_service import ConflictService
+    from .database import SessionLocal
+    db = SessionLocal()
+    try:
+        service = ConflictService(db)
+        count = service.calculate_person_metrics()
+        print(f"Recalculated metrics for {count} persons")
+    finally:
+        db.close()
 
 @app.get("/", response_class=HTMLResponse)
 async def read_root():
@@ -75,3 +86,43 @@ async def get_stats(db: Session = Depends(get_db)):
         "associations": assoc_count,
         "institutions": inst_count
     }
+
+@app.post("/api/admin/recalculate")
+async def recalculate_metrics(db: Session = Depends(get_db)):
+    """Recalculate all conflict metrics"""
+    service = ConflictService(db)
+    count = service.calculate_person_metrics()
+    return {"recalculated": count}
+
+@app.get("/api/leaderboard")
+async def get_leaderboard(metric: str = "conflict_score", limit: int = 50, db: Session = Depends(get_db)):
+    """Get top persons by conflict metric"""
+    service = ConflictService(db)
+    return service.get_leaderboard(metric, limit)
+
+@app.get("/api/person/{person_id}")
+async def get_person_aggregate(person_id: str, db: Session = Depends(get_db)):
+    """Full breakdown of a person's network"""
+    service = ConflictService(db)
+    result = service.get_person_aggregate(person_id)
+    if not result:
+        raise HTTPException(status_code=404, detail="Person not found")
+    return result
+
+@app.get("/api/alerts")
+async def get_conflict_alerts(
+    threshold_subv: float = 500000,
+    threshold_boards: int = 3,
+    db: Session = Depends(get_db)
+):
+    """Auto-flag high-risk persons"""
+    service = ConflictService(db)
+    return service.get_conflict_alerts(threshold_subv, threshold_boards)
+
+@app.get("/api/export/graph")
+async def export_graph(node_id: str, hops: int = 2, format: str = "json", db: Session = Depends(get_db)):
+    """Export graph neighborhood as JSON or for later SVG/PNG"""
+    service = GraphService()
+    service.load_from_db(db)
+    data = service.get_neighbors(node_id, hops)
+    return data

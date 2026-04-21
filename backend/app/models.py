@@ -24,12 +24,19 @@ class Node(Base):
     type = Column(Enum(NodeType), nullable=False)
     name = Column(String, nullable=False, index=True)
     
-    # Type-specific fields (stored as JSON-like or separate tables)
-    siret = Column(String, nullable=True)  # for associations
-    sector = Column(String, nullable=True)  # for associations
-    total_budget = Column(Float, nullable=True)  # for associations
-    role = Column(String, nullable=True)  # for persons
-    institution_type = Column(String, nullable=True)  # for institutions
+    # Type-specific fields
+    siret = Column(String, nullable=True)
+    sector = Column(String, nullable=True)
+    total_budget = Column(Float, nullable=True)
+    role = Column(String, nullable=True)
+    institution_type = Column(String, nullable=True)
+    
+    # Conflict analysis fields (Person nodes)
+    board_count = Column(Integer, default=0)  # how many boards person sits on
+    total_subventions_controlled = Column(Float, default=0)  # sum of subventions to their boards
+    conflict_score = Column(Float, default=0)  # composite: board_count * log(total_subventions)
+    is_membre_de_droit = Column(Integer, default=0)  # 1 if elected official with automatic appointment
+    political_affiliation = Column(String, nullable=True)
     
     # Metadata
     source = Column(Text, nullable=True)
