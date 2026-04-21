@@ -208,6 +208,52 @@ def import_full_dataset(db: Session, data_path: str = None, batch_dir: str = Non
     assocs = db.query(Node).filter(Node.type == NodeType.ASSOCIATION).count()
     
     print(f"\nDone: {total_nodes} total nodes ({assocs} assocs, {persons} persons), {total_edges} edges")
+    
+    # --- PHASE 4: Create CONFLICT_WITH edges between co-board members ---
+    print("\n=== PHASE 4: Creating person-person CONFLICT_WITH edges ===")
+    
+    from sqlalchemy.orm import joinedload
+    
+    # Get all associations with board members
+    associations_with_boards = db.query(Node).options(
+        joinedload(Node.incoming_edges).joinedload(Edge.source)
+    ).filter(Node.type == NodeType.ASSOCIATION).all()
+    
+    conflict_edges_created = 0
+    
+    for assoc in associations_with_boards:
+        # Get all board members for this association
+        board_members = []
+        for edge in assoc.incoming_edges:
+            if edge.type == EdgeType.MEMBER_OF and edge.source.type == NodeType.PERSON:
+                board_members.append(edge.source)
+        
+        if len(board_members) < 2:
+            continue
+        
+        # Create CONFLICT_WITH edges between all pairs
+        for i in range(len(board_members)):
+            for j in range(i + 1, len(board_members)):
+                p1 = board_members[i]
+                p2 = board_members[j]
+                
+                # Create a deterministic edge_id
+                edge_id = f"conflict_{min(p1.node_id, p2.node_id)}_{max(p1.node_id, p2.node_id)}"
+                
+                existing = db.query(Edge).filter(Edge.edge_id == edge_id).first()
+                if not existing:
+                    db.add(Edge(
+                        edge_id=edge_id,
+                        type=EdgeType.CONFLICT_WITH,
+                        source_id=p1.id,
+                        target_id=p2.id,
+                        description=f"Co-membres du CA de {assoc.name}",
+                        role="co_member"
+                    ))
+                    conflict_edges_created += 1
+    
+    db.commit()
+    print(f"Created {conflict_edges_created} CONFLICT_WITH edges between co-board members")
 
 def normalize_name(name):
     return name.lower().replace(' ', '_').replace('-', '_').replace('’', '_').replace('é', 'e').replace('è', 'e').replace('ê', 'e').replace('à', 'a').replace('ô', 'o').replace('ç', 'c')[:80]
