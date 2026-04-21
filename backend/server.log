@@ -35,3 +35,5 @@ INFO:     127.0.0.1:51380 - "GET /api/leaderboard?metric=conflict_score&limit=10
 Recalculated metrics for 58 persons
 INFO:     127.0.0.1:46656 - "GET /api/report/pers_marc_tessier HTTP/1.1" 200 OK
 INFO:     127.0.0.1:33416 - "GET /api/report/pers_marc_tessier HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34456 - "GET /api/leaderboard?metric=conflict_score&limit=5 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:46336 - "GET /api/stats HTTP/1.1" 200 OK
